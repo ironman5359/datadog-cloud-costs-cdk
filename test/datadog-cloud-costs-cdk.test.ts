@@ -1,17 +1,36 @@
-// import * as cdk from 'aws-cdk-lib';
-// import { Template } from 'aws-cdk-lib/assertions';
-// import * as DatadogCloudCostsCdk from '../lib/datadog-cloud-costs-cdk-stack';
 
-// example test. To run these tests, uncomment this file along with the
-// example resource in lib/datadog-cloud-costs-cdk-stack.ts
-test('SQS Queue Created', () => {
-//   const app = new cdk.App();
-//     // WHEN
-//   const stack = new DatadogCloudCostsCdk.DatadogCloudCostsCdkStack(app, 'MyTestStack');
-//     // THEN
-//   const template = Template.fromStack(stack);
+import { Capture, Match, Template } from "aws-cdk-lib/assertions";
+import * as cdk from "aws-cdk-lib";
+import * as sns from "aws-cdk-lib/aws-sns";
+import { DatadogCloudCostsCdkStack } from "../lib/datadog-cloud-costs-cdk-stack";
 
-//   template.hasResourceProperties('AWS::SQS::Queue', {
-//     VisibilityTimeout: 300
-//   });
+describe("DataDogCloudCostStack", () => {
+    test("synthesizes the way we expect", () => {
+        const app = new cdk.App();
+
+        // Since the StateMachineStack consumes resources from a separate stack
+        // (cross-stack references), we create a stack for our SNS topics to live
+        // in here. These topics can then be passed to the StateMachineStack later,
+        // creating a cross-stack reference.
+        const topicsStack = new cdk.Stack(app, "TopicsStack");
+
+        // Create the topic the stack we're testing will reference.
+        const topics = [new sns.Topic(topicsStack, "Topic1", {})];
+
+        const ddccs = new DatadogCloudCostsCdkStack(app, "DatadogCloudCostsCdkStack", {
+            env: {
+                account: '402324894655',
+                region: 'us-east-1'
+            },
+            DatadogIntegrationRole: 'arn:aws:iam::402324894655:role/DatadogIntegrationRole',
+            s3Prefix: 'datadog-cloud-costs',
+            reportName: 'datadog-cloud-costs-report'
+        });
+
+        // Prepare the stack for assertions.
+        const template = Template.fromStack(ddccs);
+
+
+    }
+    );
 });
