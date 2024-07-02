@@ -2,61 +2,46 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as cur from 'aws-cdk-lib/aws-cur';
 
 export interface DatadogCloudCostsCdkStackProps extends cdk.StackProps {
-  DatadogIntegrationRole: string;
-  s3Prefix: string
-  reportName: string
+    DatadogIntegrationRole: string;
+    s3Prefix: string;
+    reportName: string;
+    timeUnit: string;
+    format: string;
+    compression: string;
+    additionalSchemaElements: string[];
+    region: string;
 }
 
 export class DatadogCloudCostsCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: DatadogCloudCostsCdkStackProps) {
     super(scope, id, props);
 
+    if (props.region !== 'us-east-1') {
+        throw new Error('Datadog requires the report to be in us-east-1');
+    }
+
     const s3Bucket = new s3.Bucket(this, 'DatadogCloudCostsCdkBucket', {
       bucketName: `${props.env?.account}-datadog-cloud-costs`,
     });
 
-    //s3Bucket.addToResourcePolicy(new iam.PolicyStatement({
-    //    sid: "EnableAWSDataExportsToWriteToS3AndCheckPolicy",
-    //    effect: iam.Effect.ALLOW,
-    //    principals: [
-    //        new iam.ServicePrincipal('billingreports.amazonaws.com'),
-    //        new iam.ServicePrincipal('bcm-data-exports.amazonaws.com')
-    //    ],
-    //    actions: [
-    //        's3:PutObject',
-    //        's3:GetBucketPolicy'
-    //    ],
-    //    resources: [
-    //        `${s3Bucket.bucketArn}`,
-    //        `${s3Bucket.bucketArn}/*`
-    //    ],
-    //    conditions: {
-    //        stringlike: {
-    //            "aws:SourceAccount": `${props.env?.account}`,
-    //            "aws:SourceArn": [
-    //              `arn:aws:cur:us-east-1:${props.env?.account}:definition/*`,
-    //              `arn:aws:bcm-data-exports:us-east-1:${props.env?.account}:export/*`
-    //             ]
-    //        }
-    //    }
-    //}));
-
-    //const cfnReportDefinition = new cdk.aws_cur.CfnReportDefinition(this, 'DatadogCloudCostsCdkReportDefinition', {
-    //    format: 'textORcsv',
-    //    s3Bucket: s3Bucket.bucketName,
-    //    compression: 'GZIP',
-    //    s3Region: 'us-east-1',
-    //    timeUnit: 'HOURLY',
-    //    reportVersioning: 'CREATE_NEW_REPORT',
-    //    additionalSchemaElements: ['RESOURCES', 'SPLIT_COST_ALLOCATION_DATA', 'MANUAL_DISCOUNT_COMPATIBILITY'],
-    //    reportName: props.reportName,
-    //    refreshClosedReports: true,
-    //    s3Prefix: props.s3Prefix,
-    //});
-
     const existingRole = iam.Role.fromRoleArn(this, 'DatadogRole', props.DatadogIntegrationRole);
+
+    const datadog_data_export = new cur.CfnReportDefinition(this, 'Datadog_Cost_Usage_Report', {
+        reportName: props.reportName,
+        timeUnit: props.timeUnit,
+        format: props.format,
+        compression: props.compression,
+        additionalSchemaElements: props.additionalSchemaElements,
+        s3Bucket: s3Bucket.bucketName,
+        s3Prefix: 'datadog-cloud-costs',
+        s3Region: props.region,
+        refreshClosedReports: true,
+        additionalArtifacts: [],
+        reportVersioning: 'CREATE_NEW_REPORT',
+    });
 
     const datadog_usage_policy = new iam.Policy(this, 'Datadog_Cost_Usage_Policy', {
       policyName: 'Datadog_Cost_and_Usage_Policy',
@@ -96,6 +81,9 @@ export class DatadogCloudCostsCdkStack extends cdk.Stack {
         }),
       ]
     });
+
+    // Add a dependency on the policy to ensure it is created before the role
+      datadog_data_export.node.addDependency(datadog_usage_policy);
 
     // Attach this policy to the existing role
     datadog_usage_policy.attachToRole(existingRole);
